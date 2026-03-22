@@ -1,0 +1,72 @@
+{
+  "name": "LiveAnalyticsUpdate",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "seconds", "secondsInterval": 10 }] }
+      },
+      "id": "analytics-cron",
+      "name": "Every 10 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/rpc/get_analytics_snapshot",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        }
+      },
+      "id": "fetch-analytics",
+      "name": "Fetch Analytics Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Build an analytics alert so the dashboard picks it up via realtime\nconst snap = $input.first().json;\nconst activeEmergencies  = snap.active_ambulances ?? 0;\nconst signalsControlled  = snap.green_signals ?? 0;\n\nreturn [{\n  json: {\n    message: `ANALYTICS | Active: ${activeEmergencies} units | Signals cleared: ${signalsControlled}`,\n    type: 'info'\n  }\n}];"
+      },
+      "id": "build-analytics-alert",
+      "name": "Build Analytics Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/alerts",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Prefer",        "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"message\": \"{{ $json.message }}\", \"type\": \"{{ $json.type }}\" }"
+      },
+      "id": "push-analytics",
+      "name": "Push Analytics Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Every 10 Seconds":       { "main": [[{ "node": "Fetch Analytics Snapshot", "type": "main", "index": 0 }]] },
+    "Fetch Analytics Snapshot":{ "main": [[{ "node": "Build Analytics Alert",   "type": "main", "index": 0 }]] },
+    "Build Analytics Alert":  { "main": [[{ "node": "Push Analytics Alert",     "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["lifelane", "analytics"]
+}

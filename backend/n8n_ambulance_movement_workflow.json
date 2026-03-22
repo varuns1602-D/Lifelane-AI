@@ -1,0 +1,72 @@
+{
+  "name": "AmbulanceMovementSimulation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "seconds", "secondsInterval": 2 }] }
+      },
+      "id": "cron-trigger",
+      "name": "Every 2 Seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ambulances?select=ambulance_id,current_location,route_coordinates,route_step,status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        }
+      },
+      "id": "get-ambulances",
+      "name": "Get All Ambulances",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Advance each ambulance one step along its route\nconst ambulances = $input.all().map(i => i.json);\nconst updates = [];\n\nfor (const amb of ambulances) {\n  if (amb.status === 'Arrived') continue;\n  const coords = amb.route_coordinates;\n  if (!coords || coords.length === 0) continue;\n\n  const step  = amb.route_step ?? 0;\n  const total = coords.length;\n\n  if (step >= total - 1) {\n    // Reached destination\n    updates.push({\n      ambulance_id: amb.ambulance_id,\n      current_location: coords[total - 1],\n      route_step: total - 1,\n      status: 'Arrived'\n    });\n    continue;\n  }\n\n  const nextStep = step + 1;\n  const loc = Array.isArray(coords[nextStep])\n    ? { lat: coords[nextStep][0], lng: coords[nextStep][1] }\n    : coords[nextStep];\n\n  const progress = Math.round((nextStep / (total - 1)) * 100);\n\n  updates.push({\n    ambulance_id:     amb.ambulance_id,\n    current_location: loc,\n    route_step:       nextStep,\n    progress,\n    status: amb.status === 'Arrived' ? 'Arrived' : 'Active'\n  });\n}\n\nreturn updates.map(u => ({ json: u }));"
+      },
+      "id": "calculate-next-positions",
+      "name": "Calculate Next Positions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ambulances?ambulance_id=eq.{{ $json.ambulance_id }}",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Prefer",        "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"current_location\": {{ JSON.stringify($json.current_location) }},\n  \"route_step\":       {{ $json.route_step }},\n  \"progress\":         {{ $json.progress ?? 0 }},\n  \"status\":           \"{{ $json.status }}\",\n  \"updated_at\":       \"{{ new Date().toISOString() }}\"\n}"
+      },
+      "id": "update-position",
+      "name": "Push Location to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Every 2 Seconds":         { "main": [[{ "node": "Get All Ambulances",        "type": "main", "index": 0 }]] },
+    "Get All Ambulances":      { "main": [[{ "node": "Calculate Next Positions",  "type": "main", "index": 0 }]] },
+    "Calculate Next Positions":{ "main": [[{ "node": "Push Location to Supabase","type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["lifelane", "movement", "simulation"]
+}

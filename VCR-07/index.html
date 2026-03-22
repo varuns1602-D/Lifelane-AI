@@ -1,0 +1,1876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIFELANE AI — AI Ambulance Priority & Emergency Traffic System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --red: #FF3B30;
+    --neon-green: #00FF88;
+    --neon-green-glow: rgba(0, 255, 136, 0.4);
+    --amber: #FFCC00;
+    --green: #00E676;
+    --green-dim: #00a854;
+    --blue: #00FFC6;
+    --bg: #050806;
+    --bg2: #0A0F0C;
+    --bg3: #0F1411;
+    --surface: rgba(10, 28, 18, 0.8);
+    --surface2: rgba(14, 36, 24, 0.9);
+    --border: rgba(0, 255, 136, 0.15);
+    --border-bright: rgba(0, 255, 136, 0.4);
+    --text: #E0F2E9;
+    --text-dim: #88A696;
+    --text-muted: #4A6356;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --display: 'Bebas Neue', sans-serif;
+  }
+
+  /* ── LIGHT MODE OVERRIDES ── */
+  body.light-mode {
+    --bg: #F0F2F5;
+    --bg2: #FFFFFF;
+    --bg3: #F8F9FA;
+    --surface: rgba(255, 255, 255, 0.9);
+    --surface2: rgba(240, 242, 245, 0.95);
+    --border: rgba(0, 168, 84, 0.1);
+    --text: #1A1F26;
+    --text-dim: #4A6356;
+    --text-muted: #88A696;
+  }
+  body.light-mode .sidebar { background: #FFFFFF; border-right-color: #E0E0E0; }
+  body.light-mode .nav-item { color: #88A696; }
+  body.light-mode .nav-item:hover { background: #F8F9FA; }
+  body.light-mode .dashboard-v2 { background: #F0F2F5; }
+  body.light-mode .main-info-card, 
+  body.light-mode .traffic-intel-panel,
+  body.light-mode .intel-stat,
+  body.light-mode .dash-btn { background: #FFFFFF; border-color: #E0E0E0; }
+  body.light-mode .v-field-input-box { background: #F8F9FA; border-color: #E0E0E0; }
+  body.light-mode .verify-bottom-card { background: rgba(255, 255, 255, 0.9); }
+  body.light-mode .nav-sidebar-panel { background: #FFFFFF; border-right-color: #E0E0E0; }
+  body.light-mode .nav-sidebar-header,
+  body.light-mode .signal-item,
+  body.light-mode .hud-card { background: #F8F9FA; border-color: #E0E0E0; }
+  body.light-mode .profile-details-grid .detail-input { background: #F8F9FA; color: #1A1F26; }
+  body.light-mode .tactical-switch { background: #E0E0E0; border-color: #CCCCCC; }
+  body.light-mode .tactical-switch::before { background: #FFFFFF; }
+
+  /* ── UTILITIES ── */
+  .neon-text { color: var(--neon-green); text-shadow: 0 0 15px var(--neon-green-glow); }
+  .neon-border { border: 1px solid var(--neon-green); box-shadow: 0 0 15px var(--neon-green-glow); }
+  .glass { background: var(--surface); backdrop-filter: blur(12px); border: 1px solid var(--border); }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--red-dim); border-radius: 2px; }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 68px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0;
+    gap: 6px;
+    z-index: 100;
+    flex-shrink: 0;
+  }
+
+  .sidebar-logo {
+    font-family: var(--display);
+    font-size: 13px;
+    color: var(--red);
+    letter-spacing: 2px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    margin-bottom: 20px;
+    text-shadow: 0 0 20px rgba(255,31,31,0.5);
+  }
+
+  .nav-divider { width: 30px; height: 1px; background: var(--border); margin: 8px 0; }
+
+  .nav-item {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    color: var(--text-muted);
+    font-size: 18px;
+  }
+  .nav-item:hover { background: var(--surface); color: var(--text-dim); }
+  .nav-item.active { background: rgba(255,31,31,0.15); color: var(--red); }
+  .nav-item.active::before {
+    content: ''; position: absolute; left: -1px;
+    width: 3px; height: 24px; background: var(--red);
+    border-radius: 0 3px 3px 0;
+  }
+  .nav-item svg { width: 20px; height: 20px; }
+
+  .main { flex: 1; overflow-y: auto; overflow-x: hidden; }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* ── DRIVER DASHBOARD V2 ── */
+  .dashboard-v2 {
+    height: 100vh;
+    background: #0D0F10;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    color: var(--text);
+  }
+
+  .dash-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+  }
+  .logo-small {
+    width: 32px; height: 32px;
+    border: 1px solid var(--neon-green);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: var(--neon-green);
+    font-size: 18px;
+  }
+  .dash-clock {
+    background: rgba(255,255,255,0.05);
+    padding: 6px 16px;
+    border-radius: 12px;
+    font-family: var(--mono);
+    font-size: 20px;
+  }
+
+  .main-info-card {
+    background: #15191C;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .unit-id-row { display: flex; align-items: baseline; gap: 8px; }
+  .unit-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
+  .unit-value { font-size: 28px; font-weight: 700; letter-spacing: 1px; }
+
+  .heartbeat-status {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--neon-green);
+  }
+  .heartbeat-icon-small { width: 30px; height: 20px; stroke: currentColor; stroke-width: 2; fill: none; }
+  .hb-text { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+
+  .dash-stats-row { 
+    display: flex; flex-direction: column; gap: 4px;
+    border-left: 2px solid var(--red);
+    padding-left: 16px;
+    margin: 10px 0;
+  }
+  .stat-label-v2 { font-size: 12px; color: var(--text-dim); text-transform: uppercase; }
+  .stat-value-v2 { font-size: 20px; font-weight: 700; color: var(--red); }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .dash-btn {
+    background: #1C2226;
+    border-radius: 18px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .dash-btn:hover { border-color: rgba(255,255,255,0.1); background: #232a2f; }
+  .dash-btn.active-v2 { background: white; color: black; }
+  .dash-btn-icon { font-size: 24px; }
+  .dash-btn-title { font-size: 15px; font-weight: 700; line-height: 1.2; text-transform: uppercase; }
+  .dash-btn-subtitle { font-size: 11px; opacity: 0.6; text-transform: uppercase; }
+
+  .sos-container-v2 {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px 0;
+    margin-top: auto;
+  }
+  .sos-btn-v2 {
+    width: 100%;
+    height: 70px;
+    background: linear-gradient(135deg, #FF3B30 0%, #a8241d 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    color: white;
+    font-family: var(--display);
+    font-size: 24px;
+    letter-spacing: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    box-shadow: 0 10px 30px rgba(255, 59, 48, 0.3);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .sos-btn-v2:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 15px 40px rgba(255, 59, 48, 0.5);
+    background: linear-gradient(135deg, #ff4d42 0%, #ca2b23 100%);
+  }
+  .sos-btn-v2-icon {
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse-sos 2s infinite;
+  }
+  @keyframes pulse-sos {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  }
+
+  /* ── PATIENT VERIFICATION SCREEN ── */
+  .patient-verify-screen {
+    min-height: 100vh;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    background: var(--bg);
+  }
+  .verify-options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+  }
+  .v-option-card {
+    background: #1C2226;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 24px;
+    padding: 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .v-option-card:hover {
+    transform: translateY(-8px);
+    border-color: var(--neon-green);
+    background: #232a2f;
+    box-shadow: 0 10px 30px rgba(0, 255, 136, 0.1);
+  }
+  .v-option-card.unknown:hover {
+    border-color: var(--red);
+    box-shadow: 0 10px 30px rgba(255, 59, 48, 0.1);
+  }
+  .v-icon-box {
+    width: 64px; height: 64px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+  }
+  .v-option-title { font-size: 20px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .v-option-desc { font-size: 13px; color: var(--text-dim); line-height: 1.4; }
+
+  .known-patient-form {
+    display: none;
+    background: #15191C;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 24px;
+    margin-top: 20px;
+    animation: slideDown 0.4s ease-out;
+  }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+
+  .v-input {
+    width: 100%;
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    color: var(--text);
+    margin-bottom: 12px;
+    font-family: var(--sans);
+  }
+  .v-submit-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--neon-green);
+    color: #050806;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 10px;
+  }
+
+  /* ── PROFILE SCREEN ── */
+  .profile-screen {
+    padding: 40px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  /* ── TACTICAL TOGGLE SWITCH ── */
+  .theme-toggle-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-top: 24px;
+  }
+  .toggle-label {
+    font-family: var(--display);
+    font-size: 18px;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+  .tactical-switch {
+    position: relative;
+    width: 44px;
+    height: 22px;
+    appearance: none;
+    background: #1A1F26;
+    outline: none;
+    border-radius: 20px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: all 0.3s;
+    margin: 10px 0;
+  }
+  .tactical-switch:checked { background: var(--neon-green); border-color: var(--neon-green); }
+  .tactical-switch::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    top: 1px;
+    left: 1px;
+    background: var(--text-dim);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.2);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+  }
+  .tactical-switch:checked::before {
+    transform: translateX(22px);
+    background: #000;
+  }
+  .tactical-switch:hover {
+    box-shadow: 0 0 10px var(--neon-green-glow);
+  }
+  .profile-header-container {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    margin-bottom: 40px;
+    padding-bottom: 30px;
+    border-bottom: 1px solid var(--border);
+  }
+  .profile-avatar-large {
+    width: 120px;
+    height: 120px;
+    border-radius: 30px;
+    background: var(--surface);
+    border: 2px solid var(--neon-green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 60px;
+    box-shadow: 0 0 30px rgba(0, 230, 118, 0.15);
+  }
+  .profile-meta-main { flex: 1; }
+  .profile-name-display { font-family: var(--display); font-size: 36px; color: var(--text); margin-bottom: 4px; }
+  .profile-id-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 230, 118, 0.1);
+    color: var(--neon-green);
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--mono);
+    text-transform: uppercase;
+  }
+
+  .profile-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+  .detail-field {
+    background: #1C2226;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    transition: all 0.3s;
+  }
+  .detail-field:focus-within {
+    border-color: var(--neon-green);
+    background: #232a2f;
+  }
+  .detail-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .detail-input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+    outline: none;
+  }
+  .detail-input:disabled {
+    color: var(--text-muted);
+    cursor: default;
+  }
+
+  .profile-actions {
+    display: flex;
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .profile-btn {
+    flex: 1;
+    padding: 16px;
+    border-radius: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: var(--sans);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .btn-save {
+    background: var(--neon-green);
+    color: #050806;
+    border: none;
+  }
+  .btn-save:hover {
+    background: #00FF88;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 230, 118, 0.3);
+  }
+  .btn-logout {
+    background: rgba(255, 59, 48, 0.1);
+    color: var(--red);
+    border: 1px solid rgba(255, 59, 48, 0.3);
+  }
+  .btn-logout:hover {
+    background: rgba(255, 59, 48, 0.2);
+    border-color: var(--red);
+  }
+
+  /* ── TRAFFIC INTELLIGENCE PANEL ── */
+  .traffic-intel-panel {
+    background: rgba(13, 17, 23, 0.8);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 20px;
+    margin-top: 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .intel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+  .intel-title { font-family: var(--display); font-size: 16px; letter-spacing: 1px; color: var(--blue); }
+  .intel-tag { font-size: 10px; color: var(--blue); border: 1px solid var(--blue); padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .intel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .intel-stat { background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+  .intel-stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; letter-spacing: 0.5px; }
+  .intel-stat-value { font-size: 13px; font-weight: 700; color: var(--text); }
+  .intel-stat-value.high { color: var(--red); }
+  .intel-stat-value.low { color: var(--green); }
+
+  /* ── GUIDANCE UI ── */
+  .guidance-banner {
+    position: absolute; top: 120px; left: 50%; transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px);
+    border: 1px solid var(--neon-green); border-radius: 16px;
+    padding: 12px 24px; display: flex; align-items: center; gap: 20px;
+    z-index: 100; animation: fadeIn 0.5s ease-out;
+    box-shadow: 0 0 30px rgba(0,230,118,0.2);
+    pointer-events: none; opacity: 0; transition: opacity 0.3s;
+  }
+  .guidance-banner.active { opacity: 1; }
+  .guidance-arrow { font-size: 28px; color: var(--neon-green); }
+  .guidance-content { flex: 1; }
+  .guidance-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 2px; }
+  .guidance-text { font-family: var(--display); font-size: 18px; color: var(--text); line-height: 1.1; }
+  .guidance-dist { font-size: 12px; color: var(--neon-green); font-weight: 700; margin-left: 10px; }
+
+  /* ── SHARED SCREEN COMPONENTS ── */
+  .screen-header { margin-bottom: 36px; }
+  .screen-back {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--text-muted); cursor: pointer;
+    margin-bottom: 20px; letter-spacing: 1px; text-transform: uppercase;
+    transition: color 0.2s;
+  }
+  .screen-back:hover { color: var(--text-dim); }
+  .screen-title {
+    font-family: var(--display);
+    font-size: 48px; letter-spacing: 1px;
+    color: var(--text);
+    line-height: 1;
+  }
+  .screen-title span { color: var(--red); }
+  .screen-subtitle { font-size: 13px; color: var(--text-dim); margin-top: 8px; }
+
+  .form-group { margin-bottom: 20px; }
+  .form-label {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--text-muted); display: block; margin-bottom: 8px;
+  }
+  .form-input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 14px; font-weight: 600;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .form-input:focus {
+    border-color: rgba(0,230,118,0.5);
+    box-shadow: 0 0 0 3px rgba(0,230,118,0.12);
+  }
+  .form-input::placeholder { color: var(--text-muted); letter-spacing: 1px; text-transform: none; font-weight: 400; }
+
+  /* ── VEHICLE VERIFICATION (IMAGE BASED) ── */
+  .vehicle-verify-screen {
+    position: relative; width: 100%; height: 100vh;
+    background: #0D1117; overflow: hidden;
+  }
+  #verify-bg-map { position: absolute; inset: 0; opacity: 0.4; }
+  .verify-overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    padding: 20px;
+  }
+  .system-status-chip {
+    align-self: flex-end;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 100px; padding: 8px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: rgba(255,255,255,0.8);
+  }
+  .status-dot-green { width: 12px; height: 12px; border-radius: 50%; background: #00E676; box-shadow: 0 0 10px #00E676; }
+  
+  .verify-bottom-card {
+    margin-top: auto;
+    background: rgba(30, 35, 45, 0.85);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-radius: 32px 32px 0 0;
+    padding: 24px 28px;
+    display: flex; flex-direction: column; gap: 16px;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
+    max-width: 500px; margin-left: auto; margin-right: auto; width: 100%;
+  }
+  .v-field-label { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .v-field-input-box {
+    background: #1A1F26; border-radius: 12px;
+    padding: 12px 16px; font-size: 18px; color: #00E676;
+    border: 1px solid rgba(255,255,255,0.05);
+    font-family: var(--display);
+  }
+  .v-field-input-box::placeholder { color: rgba(0,230,118,0.3); }
+
+  .face-id-btn {
+    border: 1px solid #00E676; border-radius: 12px;
+    padding: 14px; display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: transparent; color: #00E676; font-size: 16px; font-weight: 500;
+    cursor: pointer; transition: all 0.2s;
+    margin-top: 4px;
+  }
+  .face-id-btn:active { background: rgba(0,230,118,0.1); transform: scale(0.98); }
+  .face-id-icon { width: 24px; height: 24px; }
+
+  .login-pill-container { display: flex; justify-content: center; margin-top: 10px; }
+  .login-pill-btn {
+    background: #00E676; color: #000; border: none;
+    padding: 6px 20px; border-radius: 10px; font-weight: 700;
+    font-size: 16px; cursor: pointer; transition: all 0.2s;
+  }
+  .login-pill-btn:hover { background: #00FF88; transform: translateY(-2px); }
+
+  /* ── NAVIGATION SCREEN ── */
+  .nav-screen {
+    min-height: 100vh;
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .nav-sidebar-panel {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .nav-sidebar-header {
+    padding: 24px 24px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .nav-emergency-banner {
+    background: rgba(255,31,31,0.1);
+    border: 1px solid rgba(255,31,31,0.3);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: var(--red);
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .nav-emergency-banner-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+    animation: blink 0.8s infinite;
+  }
+
+  .nav-route-info {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .route-metric {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .route-metric-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; }
+  .route-metric-value { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--text); }
+  .route-metric-value.highlight { color: var(--green); }
+  .route-metric-value.warn { color: var(--amber); }
+
+  .route-progress-bar {
+    height: 4px; background: var(--surface2);
+    border-radius: 2px; overflow: hidden; margin-bottom: 20px;
+  }
+  .route-progress-fill {
+    height: 100%; width: 35%;
+    background: linear-gradient(90deg, var(--red), var(--amber));
+    border-radius: 2px;
+    animation: progress-anim 3s ease-in-out infinite alternate;
+  }
+  @keyframes progress-anim { from{width:30%} to{width:45%} }
+
+  .signal-list { display: flex; flex-direction: column; gap: 8px; }
+  .signal-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .signal-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .sig-green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .sig-amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .sig-red { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .signal-name { flex: 1; color: var(--text-dim); }
+  .signal-status { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; }
+
+  .nav-map-area {
+    position: relative; overflow: hidden;
+    background: var(--bg3);
+    flex: 1;
+    height: 100vh;
+  }
+
+  .maplibregl-ctrl-attrib,
+  .maplibregl-ctrl-logo {
+    opacity: 0.4 !important;
+    filter: invert(1) brightness(0.5);
+  }
+
+  .nav-hud-top {
+    position: absolute; top: 0; left: 0; right: 0;
+    z-index: 20;
+    padding: 16px;
+    background: linear-gradient(to bottom, rgba(13,15,16,0.95), rgba(13,15,16,0));
+    pointer-events: none;
+  }
+  .hud-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+    pointer-events: auto;
+  }
+  .hud-card {
+    background: rgba(21, 25, 28, 0.9);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+  }
+  .hud-label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; }
+  .hud-value { font-size: 18px; font-weight: 700; color: var(--text); }
+  .hud-sub { font-size: 9px; color: var(--text-muted); text-transform: uppercase; }
+
+  .hud-banner {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text);
+    pointer-events: auto;
+  }
+
+  .signal-status-fab {
+    position: absolute; bottom: 100px; left: 16px;
+    z-index: 20;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(9,11,14,0.92);
+    border: 1px solid rgba(0,230,118,0.35);
+    border-radius: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(8px);
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    color: var(--green); letter-spacing: 0.5px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .signal-status-fab:hover { background: rgba(0,230,118,0.12); border-color: rgba(0,230,118,0.6); transform: translateY(-2px); }
+  .signal-status-fab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: blink 1s infinite; }
+
+  .signal-drawer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    z-index: 100; transform: translateY(100%);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    background: transparent;
+  }
+  .signal-drawer.open { transform: translateY(0); }
+
+  .signal-drawer-v2 {
+    background: #171B1E;
+    border-radius: 24px 24px 0 0;
+    padding: 24px;
+  }
+  .drawer-header-v2 {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+  }
+  .drawer-title-v2 { font-size: 18px; font-weight: 700; color: var(--text); }
+  .signal-item-v2 {
+    display: flex; align-items: center; gap: 16px; margin-bottom: 16px;
+  }
+  .sig-dot-v2 { width: 14px; height: 14px; border-radius: 50%; position: relative; }
+  .sig-dot-v2.blinking::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 50%;
+    background: inherit; opacity: 0.4; animation: sig-ping 1.5s infinite;
+  }
+  @keyframes sig-ping { to { transform: scale(3); opacity: 0; } }
+  .sig-info-v2 { flex: 1; }
+  .sig-name-v2 { font-size: 14px; font-weight: 600; }
+  .sig-meta-v2 { font-size: 11px; color: var(--text-dim); }
+
+  .end-btn-small {
+    background: var(--red); color: white; border: none; border-radius: 20px;
+    padding: 8px 20px; font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+
+  .map-overlay-bottom {
+    position: absolute; bottom: 16px; left: 16px; right: 16px;
+    z-index: 20;
+    background: rgba(9,11,14,0.9);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 20px;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    backdrop-filter: blur(8px);
+  }
+  .map-bottom-metric { text-align: center; }
+  .map-bottom-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .map-bottom-value { font-family: var(--mono); font-size: 18px; color: var(--text); font-weight: 600; }
+  .map-bottom-value.green { color: var(--green); }
+  .map-bottom-value.amber { color: var(--amber); }
+  .map-bottom-value.blue { color: var(--blue); }
+  .map-bottom-value.red { color: var(--red); }
+
+  .end-emergency-btn {
+    position: absolute; top: 16px; left: 16px;
+    z-index: 20;
+    background: rgba(255,31,31,0.15);
+    border: 1px solid rgba(255,31,31,0.3);
+    border-radius: 10px;
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--sans); font-size: 12px; font-weight: 600;
+    color: var(--red); cursor: pointer;
+    letter-spacing: 1px; text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  .end-emergency-btn:hover { background: rgba(255,31,31,0.25); }
+
+  /* ── PATIENT MODE (Unknown) ── */
+  .patient-screen {
+    min-height: 100vh;
+    background: var(--bg);
+    padding: 40px 32px;
+    position: relative;
+  }
+  .patient-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    max-width: 900px;
+  }
+  .patient-status-card {
+    background: var(--surface);
+    border: 1px solid rgba(255,149,0,0.3);
+    border-radius: 20px;
+    padding: 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .patient-status-card::before {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(255,149,0,0.08);
+  }
+  .fallback-alert {
+    background: rgba(255,149,0,0.1);
+    border: 1px solid rgba(255,149,0,0.3);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    font-size: 12px; font-weight: 600;
+    color: var(--amber); letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .recommended-hosp {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .hosp-list-mini { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .hosp-list-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg3); border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .hosp-list-name { color: var(--text-dim); }
+  .hosp-list-meta { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+  .accept-btn {
+    width: 100%; padding: 14px; border-radius: 12px; border: none;
+    background: linear-gradient(135deg, #00E676, #00a854);
+    color: #000;
+    font-family: var(--display); font-size: 20px; letter-spacing: 2px;
+    cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 20px rgba(0,230,118,0.3);
+  }
+  .accept-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(0,230,118,0.4); }
+
+  .ai-recommendation-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .ai-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--blue); font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .ai-tag-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: blink 1s infinite; }
+  .ai-score-bar {
+    background: var(--bg3); border-radius: 10px; padding: 14px;
+    border: 1px solid var(--border);
+  }
+  .ai-score-label { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .ai-score-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .ai-score-name { font-size: 12px; color: var(--text-dim); width: 100px; flex-shrink: 0; }
+  .ai-bar-track { flex: 1; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+  .ai-bar-fill { height: 100%; border-radius: 2px; }
+  .ai-score-num { font-family: var(--mono); font-size: 11px; color: var(--text-muted); width: 30px; text-align: right; }
+
+  /* ── EMERGENCY ACTIVE STATUS ── */
+  .active-screen {
+    min-height: 100vh; background: var(--bg);
+    padding: 40px 32px;
+    position: relative; overflow: hidden;
+  }
+  .active-screen::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 100%, rgba(255,31,31,0.06) 0%, transparent 60%);
+  }
+  .active-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    position: relative; z-index: 1;
+    margin-top: 32px;
+  }
+  .active-main-card {
+    grid-column: span 2;
+    background: var(--surface);
+    border: 1px solid rgba(255,31,31,0.3);
+    border-radius: 20px;
+    padding: 28px;
+    position: relative; overflow: hidden;
+  }
+  .active-main-card::before {
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--red), var(--amber), var(--red));
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+  }
+  @keyframes shimmer { from{background-position:200% 0} to{background-position:-200% 0} }
+  .active-header-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .active-title { font-family: var(--display); font-size: 32px; color: var(--text); }
+  .live-indicator {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--red);
+  }
+  .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: blink 0.6s infinite; }
+  .active-metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-bottom: 24px;
+  }
+  .active-metric {
+    background: var(--bg3); border-radius: 12px; padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .am-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
+  .am-value { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1; }
+  .am-unit { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .active-destination {
+    background: var(--bg3); border-radius: 12px; padding: 16px;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  .dest-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: rgba(0,180,255,0.1);
+    border: 1px solid rgba(0,180,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .dest-info-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .dest-name { font-size: 16px; font-weight: 600; color: var(--text); }
+  .dest-addr { font-size: 12px; color: var(--text-dim); }
+
+  .active-side { display: flex; flex-direction: column; gap: 16px; }
+  .next-signal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .nsc-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; }
+  .signal-display {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    background: var(--bg3); border-radius: 12px; padding: 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .signal-light-row { display: flex; gap: 12px; }
+  .signal-light {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--surface2); transition: all 0.3s;
+  }
+  .signal-light.active-light { box-shadow: 0 0 20px currentColor; }
+  .signal-light.red-light { background: var(--red); }
+  .signal-light.amber-light { background: var(--surface2); }
+  .signal-light.green-light { background: var(--green); }
+  .signal-override-label { font-size: 11px; color: var(--green); font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .signal-intersection { font-size: 12px; color: var(--text-dim); text-align: center; }
+  .signal-countdown { font-family: var(--mono); font-size: 24px; color: var(--green); font-weight: 600; }
+
+  .police-alert-card {
+    background: var(--surface);
+    border: 1px solid rgba(255,149,0,0.2);
+    border-radius: 16px;
+    padding: 20px;
+    flex: 1;
+  }
+  .police-units { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .police-unit {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    background: var(--bg3); border: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .police-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+  .police-id { font-family: var(--mono); color: var(--amber); font-weight: 600; }
+  .police-status { flex: 1; color: var(--text-dim); }
+  .police-dist { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+
+  .end-emergency-full {
+    grid-column: span 3;
+    padding: 16px; border-radius: 14px; border: none;
+    background: rgba(255,149,0,0.1);
+    border: 1px solid rgba(255,149,0,0.3);
+    color: var(--amber);
+    font-family: var(--display); font-size: 22px; letter-spacing: 3px;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+  }
+  .end-emergency-full:hover { background: rgba(255,149,0,0.2); transform: scale(1.01); }
+
+  .top-bar {
+    height: 52px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .top-bar-title {
+    font-family: var(--display); font-size: 20px; letter-spacing: 2px;
+    color: var(--text); flex: 1;
+  }
+  .top-bar-title span { color: var(--red); }
+  .top-bar-time { font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+  .top-bar-alert {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(255,31,31,0.1);
+    border: 1px solid rgba(255,31,31,0.2);
+    border-radius: 100px;
+    padding: 4px 12px;
+    font-size: 11px; font-weight: 600; color: var(--red);
+    letter-spacing: 1px; text-transform: uppercase;
+    animation: urgent-pulse 2s ease-in-out infinite;
+  }
+  @keyframes urgent-pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+  .section-label {
+    font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--text-muted); display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .fade-up {
+    opacity: 0; transform: translateY(20px);
+    animation: fadeUp 0.5s ease forwards;
+  }
+  .fade-up:nth-child(1) { animation-delay: 0.05s; }
+  .fade-up:nth-child(2) { animation-delay: 0.1s; }
+  .fade-up:nth-child(3) { animation-delay: 0.15s; }
+  .fade-up:nth-child(4) { animation-delay: 0.2s; }
+  .fade-up:nth-child(5) { animation-delay: 0.25s; }
+  @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+  @media (max-width: 900px) {
+    .home-content, .verify-layout, .patient-layout, .active-layout { grid-template-columns: 1fr; }
+    .nav-screen { grid-template-columns: 1fr; }
+    .nav-sidebar-panel { display: none; }
+    .active-main-card { grid-column: span 1; }
+    .end-emergency-full { grid-column: span 1; }
+    .active-metrics { grid-template-columns: 1fr 1fr; }
+    .map-overlay-bottom { grid-template-columns: 1fr 1fr; }
+  }
+
+  .map-loading {
+    position: absolute; top:0; left:0; right:0; bottom:0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: none;
+    backdrop-filter: blur(2px);
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(0,255,136,0.3);
+    border-top-color: var(--neon-green);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR (data-screen attributes) -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">LIFELANE</div>
+    <div class="nav-divider"></div>
+    <div class="nav-item active" data-screen="home" onclick="showScreen('home')" title="Home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </div>
+    <div class="nav-item" data-screen="navigation" onclick="showScreen('navigation')" title="Emergency Navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+    </div>
+    <div class="nav-item" data-screen="active" onclick="showScreen('active')" title="Active Emergency">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-screen="profile" onclick="showScreen('profile')" title="Profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </div>
+    
+    <div style="margin-top: auto; display: flex; flex-direction: column; align-items: center; width: 100%; padding-bottom: 20px;" title="Toggle Theme">
+      <input type="checkbox" class="tactical-switch" id="themeToggle" checked onclick="toggleTheme()">
+    </div>
+  </nav>
+
+  <main class="main">
+    <!-- SCREEN: VEHICLE VERIFICATION (IMAGE BASED) -->
+    <div class="screen" id="screen-vehicle-verify">
+      <div class="vehicle-verify-screen">
+        <div id="verify-bg-map"></div>
+        <div class="verify-overlay">
+          <div class="system-status-chip">
+            <span>System Status: <strong>Standby</strong></span>
+            <div class="status-dot-green"></div>
+          </div>
+
+          <div class="verify-bottom-card fade-up">
+            <div class="v-input-group">
+              <div class="v-field-label">Vehicle ID</div>
+              <div class="v-field-input-box">Vehicle ID</div>
+            </div>
+            
+            <div class="v-input-group">
+              <div class="v-field-label">Driver Credentials</div>
+              <div class="v-field-input-box">Driver Credentials</div>
+            </div>
+
+            <button class="face-id-btn" onclick="alert('Face ID Scan Initiated...'); setTimeout(() => showScreen('home'), 1500)">
+              <svg class="face-id-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3M8 7v10M16 7v10M7 8h10M7 16h10" />
+              </svg>
+              Face ID Quick Login
+            </button>
+
+            <div class="login-pill-container">
+              <button class="login-pill-btn" onclick="showScreen('home')">Log In</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: HOME -->
+    <div class="screen" id="screen-home">
+      <div class="dashboard-v2">
+        <div class="dash-header">
+          <div class="logo-small">L</div>
+          <div class="dash-clock" id="dashClock">14:35</div>
+        </div>
+        <div class="main-info-card">
+          <div class="unit-id-row"><span class="unit-label">Unit ID:</span><span class="unit-value">A-24 (ACTIVE)</span></div>
+          <div class="heartbeat-status">
+            <svg class="heartbeat-icon-small" viewBox="0 0 40 20"><path d="M0,10 L10,10 L12,2 L16,18 L20,10 L40,10" /></svg>
+            <span class="hb-text">System Heartbeat: <strong>Stable (98ms)</strong></span>
+          </div>
+          <div class="dash-stats-row">
+            <div class="stat-label-v2">Active Cases</div>
+            <div class="stat-value-v2">2 (PRIORITY)</div>
+          </div>
+          <div style="font-size:13px;font-weight:600;text-transform:uppercase;color:var(--text-dim);">
+            Next Waypoint: <span style="color:var(--text);">Memorial Hospital (4 min)</span>
+          </div>
+        </div>
+        <!-- minimap container -->
+        <div id="minimap" style="width:100%;height:150px;border-radius:16px;overflow:hidden;border:1px solid var(--border);margin-bottom:16px;position:relative;">
+          <div class="map-loading" id="minimap-loading"><div class="spinner"></div></div>
+        </div>
+        <div class="dashboard-grid">
+          <div class="dash-btn active-v2" onclick="showScreen('navigation')"><div class="dash-btn-icon">🗺</div><div><div class="dash-btn-title">Route<br>Optimization</div><div class="dash-btn-subtitle">(Engaged)</div></div></div>
+          <div class="dash-btn" onclick="alert('Communication system initializing...')"><div class="dash-btn-icon">💬</div><div><div class="dash-btn-title">Team<br>Comms</div><div class="dash-btn-subtitle">(3 Unread)</div></div></div>
+          <div class="dash-btn" onclick="showScreen('active')"><div class="dash-btn-icon">⚠</div><div><div class="dash-btn-title">Critical<br>Alerts</div><div class="dash-btn-subtitle">(1 Active)</div></div></div>
+        </div>
+
+        <!-- Traffic Intelligence Panel -->
+        <div class="traffic-intel-panel fade-up">
+          <div class="intel-header">
+            <div class="intel-title">TRAFFIC INTELLIGENCE</div>
+            <div class="intel-tag">AI Powered</div>
+          </div>
+          <div class="intel-grid">
+            <div class="intel-stat">
+              <div class="intel-stat-label">Traffic Load</div>
+              <div class="intel-stat-value low" id="intelLoad">Low</div>
+            </div>
+            <div class="intel-stat">
+              <div class="intel-stat-label">Congestion Detected</div>
+              <div class="intel-stat-value" id="intelCongestion">None</div>
+            </div>
+            <div class="intel-stat">
+              <div class="intel-stat-label">Suggested Corridor</div>
+              <div class="intel-stat-value" id="intelCorridor">Primary Route</div>
+            </div>
+            <div class="intel-stat">
+              <div class="intel-stat-label">Est. Time Saved</div>
+              <div class="intel-stat-value" id="intelSavings">0.0 mins</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sos-container-v2">
+          <button class="sos-btn-v2" onclick="activateSOS()"><div class="sos-btn-v2-icon">⚡</div>ACTIVATE SOS EMERGENCY</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- SCREEN: PATIENT VERIFICATION -->
+    <div class="screen" id="screen-patient-verify">
+      <div class="patient-verify-screen">
+        <div class="screen-header">
+          <div class="screen-back" onclick="showScreen('home')">← Back</div>
+          <div class="screen-title">PATIENT<br><span>VERIFICATION</span></div>
+          <div class="screen-subtitle">Identify patient status to optimize emergency medical protocol</div>
+        </div>
+        <div class="verify-options-grid">
+          <div class="v-option-card unknown" onclick="showScreen('navigation')"><div class="v-icon-box" style="color:var(--red)">?</div><div class="v-option-title">Patient Unknown</div><div class="v-option-desc">Launch emergency navigation immediately to nearest trauma center</div></div>
+          <div class="v-option-card known" onclick="toggleKnownForm()"><div class="v-icon-box" style="color:var(--neon-green)">✓</div><div class="v-option-title">Patient Known</div><div class="v-option-desc">Provide patient details to pre-notify medical staff</div></div>
+        </div>
+        <div class="known-patient-form" id="knownPatientForm">
+          <div class="section-label">Medical Intake Details</div>
+          <div class="form-group"><label class="form-label">Full Name</label><input class="v-input" type="text" placeholder="Legal name"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="form-group"><label class="form-label">Estimated Age</label><input class="v-input" type="text" placeholder="Years"></div>
+            <div class="form-group"><label class="form-label">Condition</label><select class="v-input"><option value="critical">Critical</option><option value="severe">Severe</option><option value="moderate">Moderate</option><option value="stable">Stable</option></select></div>
+          </div>
+          <button class="v-submit-btn" onclick="showScreen('navigation')">Finalize & Navigate →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: LIVE NAVIGATION -->
+    <div class="screen" id="screen-navigation">
+      <div class="nav-screen">
+        <div class="nav-sidebar-panel">
+          <div class="nav-sidebar-header">
+            <div class="nav-emergency-banner"><div class="nav-emergency-banner-dot"></div>EMERGENCY ACTIVE</div>
+            <div style="font-family:var(--display);font-size:28px;color:var(--text);line-height:1">EMERGENCY<br><span style="color:var(--red)">NAVIGATION</span></div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:6px">Real-time green corridor tracking</div>
+          </div>
+          <div class="nav-route-info">
+            <div class="section-label">Route Metrics</div>
+            <div class="route-metric"><div class="route-metric-label">ETA</div><div class="route-metric-value highlight" id="etaDisplay">8 min</div></div>
+            <div class="route-metric"><div class="route-metric-label">Distance</div><div class="route-metric-value">3.2 <span style="font-size:13px;color:var(--text-dim)">km</span></div></div>
+            <div class="route-metric"><div class="route-metric-label">Speed</div><div class="route-metric-value warn" id="speedDisplay">42 <span style="font-size:13px">km/h</span></div></div>
+            <div class="route-progress-bar"><div class="route-progress-fill"></div></div>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:14px">Destination: Victoria Hospital, BTM Layout</div>
+            <div class="section-label">Signal Corridor</div>
+            <div class="signal-list">
+              <div class="signal-item"><div class="signal-dot sig-green"></div><div class="signal-name">MG Road Junction</div><div class="signal-status" style="color:var(--green)">CLEARED</div></div>
+              <div class="signal-item"><div class="signal-dot sig-green"></div><div class="signal-name">Trinity Circle</div><div class="signal-status" style="color:var(--green)">CLEARED</div></div>
+              <div class="signal-item"><div class="signal-dot sig-amber"></div><div class="signal-name">Richmond Circle</div><div class="signal-status" style="color:var(--amber)">QUEUING</div></div>
+              <div class="signal-item"><div class="signal-dot sig-red"></div><div class="signal-name">Lalbagh Gate</div><div class="signal-status" style="color:var(--red)">OVERRIDING</div></div>
+              <div class="signal-item"><div class="signal-dot" style="background:var(--text-muted)"></div><div class="signal-name">BTM Layout Junction</div><div class="signal-status" style="color:var(--text-muted)">AHEAD</div></div>
+            </div>
+          </div>
+          <div style="padding:16px 24px"><button class="end-emergency-btn" style="position:static;width:100%;justify-content:center" onclick="showScreen('home')">⏹ END EMERGENCY</button></div>
+        </div>
+        <div class="nav-map-area" style="position:relative;">
+          <div id="navmap" style="width:100%;height:100%;"><div class="map-loading" id="navmap-loading"><div class="spinner"></div></div></div>
+          
+          <!-- Route Guidance Banner -->
+          <div class="guidance-banner" id="guidanceBanner">
+            <div class="guidance-arrow" id="guidanceArrow">↑</div>
+            <div class="guidance-content">
+              <div class="guidance-label" id="guidanceLabel">Next Intersection</div>
+              <div class="guidance-text" id="guidanceText">Straight on MG Road</div>
+            </div>
+            <div class="guidance-dist" id="guidanceDist">300m</div>
+          </div>
+
+          
+          <div class="nav-hud-top">
+
+            <div class="hud-banner">Emergency Live Navigation</div>
+          </div>
+        
+        </div>
+      </div>
+    </div>
+
+
+    <!-- SCREEN: EMERGENCY ACTIVE -->
+    <div class="screen" id="screen-active">
+      <div class="top-bar"><div class="top-bar-title">EMERGENCY <span>ACTIVE</span></div><div class="live-indicator"><div class="live-dot"></div> LIVE TRACKING</div><div class="top-bar-alert">🚑 EN ROUTE</div></div>
+      <div class="active-screen">
+        <div class="active-layout">
+          <div class="active-main-card fade-up">
+            <div class="active-header-row"><div><div style="font-size:10px;color:var(--text-muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Emergency Active</div><div class="active-title">EMERGENCY ACTION</div></div><div class="live-indicator"><div class="live-dot"></div> LIVE</div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+              <div style="background:var(--bg3);border-radius:10px;padding:12px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Ambulance ID</div><div style="font-family:var(--mono);font-size:16px;color:var(--text)">KA05AB1234</div></div>
+              <div style="background:var(--bg3);border-radius:10px;padding:12px;border:rgba(255,31,31,0.2) 1px solid"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Status</div><div style="font-size:14px;color:var(--red);font-weight:700;letter-spacing:1px">EN ROUTE — CRITICAL</div></div>
+            </div>
+            <div class="active-metrics">
+              <div class="active-metric"><div class="am-label">Speed</div><div class="am-value" style="color:var(--amber)" id="speedVal">42</div><div class="am-unit">km / hour</div></div>
+              <div class="active-metric"><div class="am-label">ETA</div><div class="am-value" style="color:var(--green)" id="etaVal">08</div><div class="am-unit">minutes</div></div>
+              <div class="active-metric"><div class="am-label">Distance</div><div class="am-value" style="color:var(--blue)">3.2</div><div class="am-unit">km remaining</div></div>
+            </div>
+            <div class="active-destination"><div class="dest-icon">🏥</div><div><div class="dest-info-label">Destination Hospital</div><div class="dest-name">Victoria Hospital, BTM Layout</div><div class="dest-addr">Bengaluru · ICU Ready · Trauma Bay 2 Prepared</div></div></div>
+          </div>
+          <div class="active-side fade-up">
+            <div class="next-signal-card">
+              <div class="nsc-label">Next Signal Override</div>
+              <div class="signal-display"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">Signal State</div><div class="signal-light-row"><div class="signal-light red-light active-light"></div><div class="signal-light amber-light"></div><div class="signal-light green-light active-light"></div></div><div class="signal-override-label">OVERRIDE ACTIVE</div></div>
+              <div class="signal-intersection">Lalbagh Gate Junction</div>
+              <div style="text-align:center;margin-top:8px"><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Override in</div><div class="signal-countdown" id="signalCountdown">00:12</div></div>
+            </div>
+            <div class="police-alert-card">
+              <div class="nsc-label">Police Units Alerted</div>
+              <div class="police-units">
+                <div class="police-unit"><div class="police-dot"></div><div class="police-id">PCR-042</div><div class="police-status">Lalbagh Rd</div><div class="police-dist">0.4 km</div></div>
+                <div class="police-unit"><div class="police-dot" style="background:var(--green)"></div><div class="police-id" style="color:var(--green)">PCR-017</div><div class="police-status">Blocking BTM Jn</div><div class="police-dist">1.1 km</div></div>
+                <div class="police-unit"><div class="police-dot" style="background:var(--blue)"></div><div class="police-id" style="color:var(--blue)">PCR-088</div><div class="police-status">MG Road escort</div><div class="police-dist">0.2 km</div></div>
+              </div>
+            </div>
+          </div>
+          <button class="end-emergency-full" onclick="showScreen('home')">⏹ END EMERGENCY</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCREEN: PROFILE -->
+    <div class="screen" id="screen-profile">
+      <div class="profile-screen">
+        <div class="screen-header"><div class="screen-back" onclick="showScreen('home')">← Back to Dashboard</div><div class="screen-title">OPERATOR<br><span>PROFILE</span></div><div class="screen-subtitle">Manage your personnel details and system access</div></div>
+        <div class="profile-header-container fade-up"><div class="profile-avatar-large">👨‍✈️</div><div class="profile-meta-main"><div class="profile-name-display" id="profileNameDisplay">Alex Rivers</div><div class="profile-id-badge">ID: L-2950-X</div></div></div>
+        <div class="profile-details-grid fade-up">
+          <div class="detail-field"><div class="detail-label">Full Name</div><input type="text" class="detail-input" id="profName" value="Alex Rivers"></div>
+          <div class="detail-field"><div class="detail-label">Assigned Unit</div><input type="text" class="detail-input" id="profUnit" value="Ambulance A-24" disabled></div>
+          <div class="detail-field"><div class="detail-label">Operator Rank</div><input type="text" class="detail-input" id="profRank" value="Senior Tactical Pilot"></div>
+          <div class="detail-field"><div class="detail-label">Clearance Level</div><input type="text" class="detail-input" id="profClearance" value="Level 4 (Tactical)" disabled></div>
+          <div class="detail-field"><div class="detail-label">Shift Timing</div><input type="text" class="detail-input" id="profShift" value="07:00 – 19:00 (Day)"></div>
+          <div class="detail-field"><div class="detail-label">Emergency Protocol</div><input type="text" class="detail-input" id="profProtocol" value="Advanced Life Support (ALS)"></div>
+        </div>
+        
+
+        <div class="profile-actions fade-up"><button class="profile-btn btn-save" onclick="saveProfile()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Save Changes</button><button class="profile-btn btn-logout" onclick="logoutSession()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Logout Session</button></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="simulation/smartRouting.js"></script>
+<script>
+(function() {
+  // Global functions
+  window.showScreen = function(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+    const target = document.getElementById('screen-' + name);
+    if (!target) { console.error(`Screen screen-${name} not found`); return; }
+    target.classList.add('active');
+
+    const activeNav = document.querySelector(`.nav-item[data-screen="${name}"]`);
+    if (activeNav) activeNav.classList.add('active');
+
+    const sidebar = document.querySelector('.sidebar');
+    const main = document.querySelector('.main');
+    if (name === 'vehicle-verify') {
+      if (sidebar) sidebar.style.display = 'none';
+      if (main) main.style.paddingLeft = '0';
+    } else {
+      if (sidebar) sidebar.style.display = 'flex';
+      if (main) main.style.paddingLeft = '68px';
+    }
+
+    setTimeout(() => {
+      if (name === 'navigation' && window.navMap) window.navMap.resize();
+      if (name === 'home' && window.miniMap) window.miniMap.resize();
+      if (name === 'vehicle-verify' && window.verifyMap) window.verifyMap.resize();
+    }, 100);
+  };
+
+  // --- SUPABASE INTEGRATION ---
+  const SUPABASE_URL = 'https://cyitptrkyptchitdpmzk.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5aXRwdHJreXB0Y2hpdGRwbXprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MzY3NjgsImV4cCI6MjA4OTAxMjc2OH0.GuBGbiartOK-Q-ikUT5MN-52_P0wtkUdKQev8h4mhLM';
+  const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+  const vehicleId = 'AMB001';
+
+  async function startGpsStreaming() {
+    setInterval(async () => {
+      // Get position from Map (simulation)
+      const pos = window.navMap ? window.navMap.getCenter() : { lng: 77.5946, lat: 12.9716 };
+      const speed = 35 + Math.floor(Math.random() * 20);
+
+      try {
+        await fetch('http://localhost:5000/api/location', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ambulance_id: vehicleId,
+            lat: pos.lat,
+            lng: pos.lng,
+            speed: speed,
+            status: 'Active',
+            priority: 1
+          })
+        });
+      } catch (e) {
+        console.error('[Mobile] Failed to stream GPS to unified backend:', e);
+      }
+    }, 2000);
+  }
+
+  function setupRealtimeListeners() {
+    if (!supabase) return;
+
+    // Listen to hospital assignment
+    supabase
+      .channel("hospital_assignment")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "emergencies", filter: `ambulance_id=eq.${vehicleId}` }, (payload) => {
+        if (payload.new && payload.new.hospital_name) {
+          const destEl = document.querySelector('.dest-name');
+          if (destEl) destEl.textContent = payload.new.hospital_name;
+          showGuidance(`New Destination: ${payload.new.hospital_name}`, 'Route Updated', 'straight');
+        }
+      })
+      .subscribe();
+
+    // Listen to signal updates
+    supabase
+      .channel("signal_updates")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "signals" }, (payload) => {
+        const sig = payload.new;
+        const sigItems = document.querySelectorAll('.signal-item');
+        sigItems.forEach(item => {
+          if (item.textContent.includes(sig.name)) {
+             const dot = item.querySelector('.signal-dot');
+             const status = item.querySelector('.signal-status');
+             if (dot) dot.className = `signal-dot sig-${sig.status}`;
+             if (status) {
+               status.textContent = sig.status.toUpperCase();
+               status.style.color = sig.status === 'green' ? 'var(--green)' : sig.status === 'red' ? 'var(--red)' : 'var(--amber)';
+             }
+          }
+        });
+      })
+      .subscribe();
+  }
+
+  window.activateSOS = async function() {
+    document.body.style.transition = 'background 0.3s';
+    document.body.style.background = '#FF3B30';
+    setTimeout(() => document.body.style.background = '', 300);
+    
+    const pos = window.navMap ? window.navMap.getCenter() : { lng: 77.5946, lat: 12.9716 };
+
+    try {
+      await fetch('http://localhost:5000/api/emergency', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: vehicleId,
+          name: "Emergency Operator",
+          location: {
+            lat: pos.lat,
+            lng: pos.lng
+          },
+          status: "EMERGENCY"
+        })
+      });
+      
+      startGpsStreaming();
+      setupRealtimeListeners();
+    } catch (e) {
+      console.error('[Mobile] Failed to trigger SOS via unified backend:', e);
+    }
+    
+    window.showScreen('patient-verify');
+  };
+
+  window.toggleKnownForm = function() {
+    const form = document.getElementById('knownPatientForm');
+    if (form) {
+      form.style.display = form.style.display === 'block' ? 'none' : 'block';
+      if (form.style.display === 'block') form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+
+  window.toggleSignalDrawer = function() {
+    const drawer = document.getElementById('signalDrawer');
+    const fab = document.getElementById('signalFab');
+    const label = document.getElementById('signalFabLabel');
+    if (!drawer) return;
+    const isOpen = drawer.classList.contains('open');
+    drawer.classList.toggle('open', !isOpen);
+    if (fab) fab.classList.toggle('open', !isOpen);
+    if (label) label.textContent = isOpen ? '🚦 Signal Status' : '✕ Close';
+  };
+
+  window.saveProfile = function() {
+    const name = document.getElementById('profName').value;
+    const display = document.getElementById('profileNameDisplay');
+    if (display) display.textContent = name;
+    const btn = document.querySelector('.btn-save');
+    if (btn) {
+      const oldText = btn.innerHTML;
+      btn.textContent = '✓ SAVED';
+      btn.style.background = '#00C853';
+      setTimeout(() => { btn.innerHTML = oldText; btn.style.background = ''; }, 2000);
+    }
+  };
+
+  window.logoutSession = function() {
+    window.location.reload();
+  };
+
+  window.toggleTheme = function() {
+    const isDark = document.getElementById('themeToggle').checked;
+    if (isDark) {
+      document.body.classList.remove('light-mode');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.body.classList.add('light-mode');
+      localStorage.setItem('theme', 'light');
+    }
+    // Resize maps after style change
+    setTimeout(() => {
+      if (window.navMap) window.navMap.resize();
+      if (window.miniMap) window.miniMap.resize();
+      if (window.verifyMap) window.verifyMap.resize();
+    }, 300);
+  };
+
+  // Init theme from localStorage
+  if (localStorage.getItem('theme') === 'light') {
+    document.body.classList.add('light-mode');
+    setTimeout(() => {
+      const toggle = document.getElementById('themeToggle');
+      if (toggle) toggle.checked = false;
+    }, 100);
+  }
+
+  // Map initialization with error logging
+  const MAPTILER_KEY = 'orUkDJaRfHSjJBqy7Qvr';
+  const MAPTILER_STYLE = `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${MAPTILER_KEY}`;
+
+  function hideLoadingSpinner(mapId) {
+    const spinner = document.getElementById(mapId + '-loading');
+    if (spinner) spinner.style.display = 'none';
+  }
+
+  function applyTacticalStyle(map) {
+    if (!map.isStyleLoaded()) return;
+    const layers = map.getStyle().layers;
+    layers.forEach(layer => {
+      // Hide POIs and buildings but show road names and city labels
+      if (layer.id.includes('poi') || layer.id.includes('park') || layer.id.includes('building')) {
+        map.setLayoutProperty(layer.id, 'visibility', 'none');
+      }
+    });
+  }
+
+  function updateTrafficIntelligence() {
+    if (!window.SmartRouting) return;
+    const intel = window.SmartRouting.getTrafficIntelligence();
+    const loadEl = document.getElementById('intelLoad');
+    const congEl = document.getElementById('intelCongestion');
+    const corrEl = document.getElementById('intelCorridor');
+    const saveEl = document.getElementById('intelSavings');
+
+    if (loadEl) { loadEl.textContent = intel.overallLoad; loadEl.className = `intel-stat-value ${intel.overallLoad.toLowerCase()}`; }
+    if (congEl) congEl.textContent = intel.congestionPoints.length > 0 ? intel.congestionPoints.join(', ') : 'None';
+    if (corrEl) corrEl.textContent = intel.suggestedRoute;
+    if (saveEl) saveEl.textContent = intel.timeSaved;
+  }
+
+  function showGuidance(text, dist, type = 'straight') {
+    const banner = document.getElementById('guidanceBanner');
+    const arrow = document.getElementById('guidanceArrow');
+    const textEl = document.getElementById('guidanceText');
+    const distEl = document.getElementById('guidanceDist');
+    
+    if (!banner) return;
+    banner.classList.add('active');
+    if (arrow) arrow.textContent = type === 'straight' ? '↑' : type === 'left' ? '←' : '→';
+    if (textEl) textEl.textContent = text;
+    if (distEl) distEl.textContent = dist;
+    
+    setTimeout(() => banner.classList.remove('active'), 4000);
+  }
+
+  function drawRouteCorridor(map, segments) {
+    if (!map || !segments) return;
+    const sourceId = 'route-corridor';
+    const coords = segments.flatMap(s => s.coordinates);
+    
+    if (map.getSource(sourceId)) {
+        map.getSource(sourceId).setData({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords }
+        });
+    } else {
+        map.addSource(sourceId, {
+            type: 'geojson',
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
+        });
+        map.addLayer({
+            id: sourceId,
+            type: 'line',
+            source: sourceId,
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: {
+                'line-color': '#00E676',
+                'line-width': 8,
+                'line-opacity': 0.6,
+                'line-blur': 2
+            }
+        });
+    }
+  }
+
+  // Mini map
+  const miniContainer = document.getElementById('minimap');
+  if (miniContainer) {
+    try {
+      window.miniMap = new maplibregl.Map({
+        container: 'minimap',
+        style: MAPTILER_STYLE,
+        center: [77.5946, 12.9716],
+        zoom: 13,
+        interactive: false,
+        attributionControl: false
+      });
+      window.miniMap.on('load', () => {
+        hideLoadingSpinner('minimap');
+        applyTacticalStyle(window.miniMap); // Hide city labels
+        new maplibregl.Marker({ color: '#00E676' }).setLngLat([77.5946, 12.9716]).addTo(window.miniMap);
+      });
+      window.miniMap.on('error', (e) => { console.error('Mini map error:', e); hideLoadingSpinner('minimap'); });
+    } catch (e) { console.error('Failed to init mini map:', e); hideLoadingSpinner('minimap'); }
+  }
+
+  // Navigation map
+  const navContainer = document.getElementById('navmap');
+  if (navContainer) {
+    try {
+      window.navMap = new maplibregl.Map({
+        container: 'navmap',
+        style: MAPTILER_STYLE,
+        center: [77.598, 12.954],
+        zoom: 14,
+        attributionControl: false
+      });
+      window.navMap.addControl(new maplibregl.AttributionControl({ compact: true }));
+      window.navMap.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+      window.navMap.on('load', () => {
+        hideLoadingSpinner('navmap');
+        applyTacticalStyle(window.navMap); // Hide city labels
+        
+        // Initial route corridor
+        if (window.SmartRouting) {
+          const route = window.SmartRouting.calculateFastestPath();
+          drawRouteCorridor(window.navMap, route);
+        }
+
+        // Ambulance marker
+        const ambulanceEl = document.createElement('div');
+        ambulanceEl.style.cssText = 'width:28px;height:28px;background:#00E676;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 0 20px rgba(0,230,118,0.6);';
+        ambulanceEl.textContent = '🚑';
+        new maplibregl.Marker({ element: ambulanceEl })
+          .setLngLat([77.5946, 12.9716])
+          .addTo(window.navMap);
+
+        // Hospital marker
+        const hospEl = document.createElement('div');
+        hospEl.style.cssText = 'width:22px;height:22px;background:#00FFC6;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 0 15px rgba(0,255,198,0.5);';
+        hospEl.textContent = '🏥';
+        new maplibregl.Marker({ element: hospEl })
+          .setLngLat([77.614, 12.940])
+          .setPopup(new maplibregl.Popup({ offset: 25 }).setText('Victoria Hospital — 3.2 km'))
+          .addTo(window.navMap);
+      });
+      window.navMap.on('error', (e) => { console.error('Navigation map error:', e); hideLoadingSpinner('navmap'); });
+    } catch (e) { console.error('Failed to init nav map:', e); hideLoadingSpinner('navmap'); }
+  }
+
+  // Verification background map
+  const verifyContainer = document.getElementById('verify-bg-map');
+  if (verifyContainer) {
+    try {
+      window.verifyMap = new maplibregl.Map({
+        container: 'verify-bg-map',
+        style: MAPTILER_STYLE,
+        center: [77.5946, 12.9716],
+        zoom: 14,
+        attributionControl: false,
+        interactive: false
+      });
+      window.verifyMap.on('load', () => {
+        applyTacticalStyle(window.verifyMap);
+      });
+    } catch (e) { console.error('Failed to init verify map:', e); }
+  }
+
+  // Clock and simulation
+  function updateClock() {
+    const now = new Date();
+    const dashTimeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const dashClock = document.getElementById('dashClock');
+    if (dashClock) dashClock.textContent = dashTimeStr;
+
+    const hudEta = document.getElementById('hudEta');
+    if (hudEta) {
+      const etaTime = new Date(now.getTime() + 8 * 60000);
+      hudEta.textContent = etaTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    }
+    
+    // Refresh traffic intelligence
+    updateTrafficIntelligence();
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  let countdown = 12, richmond = 18;
+  setInterval(() => {
+    countdown = countdown > 0 ? countdown - 1 : 30;
+    richmond = richmond > 0 ? richmond - 1 : 45;
+    const fmt = n => '00:' + String(n).padStart(2,'0');
+    const ids = ['signalCountdown'];
+    ids.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(countdown); });
+  }, 1000);
+
+  let eta = 8;
+  setInterval(() => {
+    if (eta > 1) eta -= 0.1;
+    const etaMin = Math.ceil(eta);
+    const e1 = document.getElementById('etaDisplay');
+    const e2 = document.getElementById('etaVal');
+    const he = document.getElementById('hudEta');
+    if (e1) e1.textContent = etaMin + ' min';
+    if (e2) e2.textContent = String(etaMin).padStart(2,'0');
+    if (he) {
+      const now = new Date();
+      const etaTime = new Date(now.getTime() + etaMin * 60000);
+      he.textContent = etaTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    }
+
+    // Smart Rerouting Simulation
+    if (window.SmartRouting && etaMin < 7) {
+        const congestion = window.SmartRouting.checkCongestion(window.SmartRouting.calculateFastestPath(), 0);
+        if (congestion.detected && !window.rerouteTriggered) {
+            window.rerouteTriggered = true;
+            alert(`AI Route Optimization Activated — New Faster Route Found\nReason: ${congestion.reason} at ${congestion.location}`);
+            const newRoute = window.SmartRouting.calculateFastestPath();
+            drawRouteCorridor(window.navMap, newRoute);
+            showGuidance(`Rerouting: ${congestion.location} Avoided`, 'New ETA: 6m', 'right');
+            
+            const intelCorridor = document.getElementById('intelCorridor');
+            if (intelCorridor) intelCorridor.textContent = 'MG Road (Optimized)';
+        }
+    }
+
+    // Predictive Signal Clearing
+    if (window.countdown < 15 && !window.signalCleared) {
+        window.signalCleared = true;
+        console.log("Signal pre-cleared for emergency vehicle");
+        const statusFab = document.getElementById('signalFabLabel');
+        if (statusFab) statusFab.textContent = "✓ Signal Pre-Cleared";
+        showGuidance("Signal Pre-Cleared", "Intersection Ahead", "straight");
+    }
+  }, 3000);
+
+  setInterval(() => {
+    const speed = 35 + Math.floor(Math.random() * 20);
+    const s1 = document.getElementById('speedDisplay');
+    const s2 = document.getElementById('speedVal');
+    const hs = document.getElementById('hudSpeed');
+    if (s1) s1.innerHTML = `${speed} <span style="font-size:13px">km/h</span>`;
+    if (s2) s2.textContent = speed;
+    if (hs) hs.innerHTML = `${speed} <span style="font-size:12px">km/h</span>`;
+  }, 3000);
+
+  // Start on vehicle verification screen
+  window.showScreen('vehicle-verify');
+})();
+</script>
+</body>
+</html>

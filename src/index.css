@@ -1,0 +1,208 @@
+@import "tailwindcss";
+
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --color-background: #0f172a;
+  --color-panel: #1e293b;
+  --color-text-primary: #e2e8f0;
+  --color-corridor-green: #22c55e;
+  --color-route-yellow: #eab308;
+  --color-route-blue: #3b82f6;
+  --color-alert-red: #ef4444;
+  --font-sans: 'Inter', sans-serif;
+
+  --background-image-city-grid: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    background-color: color-mix(in srgb, var(--color-panel) 80%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  }
+
+  .map-container {
+    height: 100%;
+    width: 100%;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Custom scrollbar for a sleek look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Smart City Simulation Animations */
+.signal-glow {
+  transition: all 1s ease-in-out;
+}
+
+.corridor-pulse {
+  filter: drop-shadow(0 0 10px #22c55e);
+  animation: corridor-pulse-anim 2s infinite alternate;
+}
+
+@keyframes corridor-pulse-anim {
+  from {
+    opacity: 0.6;
+    stroke-width: 6;
+  }
+
+  to {
+    opacity: 1;
+    stroke-width: 10;
+  }
+}
+
+.leaflet-marker-icon {
+  background: none !important;
+  border: none !important;
+}
+
+.glass-popup .leaflet-popup-content-wrapper {
+  background: rgba(30, 41, 59, 1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+}
+
+.glass-popup .leaflet-popup-tip {
+  background: rgba(30, 41, 59, 1);
+}
+
+.animate-glow-green {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+.animate-glow-yellow {
+  box-shadow: 0 0 20px rgba(234, 179, 8, 0.4);
+}
+
+@keyframes pulse-node {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: scale(1.5);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-node {
+  animation: pulse-node 3s infinite ease-in-out;
+}
+
+@keyframes ambulance-move {
+  0% {
+    offset-distance: 0%;
+  }
+
+  100% {
+    offset-distance: 100%;
+  }
+}
+
+.animate-ambulance {
+  animation: ambulance-move 20s infinite linear;
+}
+
+@keyframes glow-shift {
+  0% {
+    filter: drop-shadow(0 0 5px #22c55e);
+  }
+
+  50% {
+    filter: drop-shadow(0 0 15px #22c55e);
+  }
+
+  100% {
+    filter: drop-shadow(0 0 5px #22c55e);
+  }
+}
+
+@keyframes heartbeat {
+  0% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+
+  10% {
+    transform: scale(1.05);
+    opacity: 0.15;
+  }
+
+  20% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+
+  30% {
+    transform: scale(1.1);
+    opacity: 0.2;
+  }
+
+  45% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+}
+
+.animate-heartbeat {
+  animation: heartbeat 2s infinite ease-in-out;
+}
+
+@keyframes ekg-move {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-ekg {
+  stroke-dasharray: 1000;
+  animation: ekg-move 10s infinite linear;
+}

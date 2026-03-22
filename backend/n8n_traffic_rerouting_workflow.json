@@ -1,0 +1,123 @@
+{
+  "name": "TrafficAIReroutingWorkflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reroute-trigger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "reroute-webhook",
+      "name": "Signal Update Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "lifelane-reroute"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.record.status }}",
+              "operation": "equals",
+              "value2": "red"
+            }
+          ]
+        }
+      },
+      "id": "check-congestion",
+      "name": "Check Congestion / Blocked Signal",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ambulances?status=neq.Arrived&select=ambulance_id,current_location,hospital_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        }
+      },
+      "id": "get-active-ambulances",
+      "name": "Get Active Ambulances",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Simulate AI rerouting — in production swap with a real Directions API call\nconst ambulances = $('Get Active Ambulances').all().map(i => i.json);\nconst alerts = [];\n\nfor (const amb of ambulances) {\n  alerts.push({\n    message: `AI rerouting ${amb.ambulance_id} — congestion detected on corridor`,\n    type: 'warning',\n    ambulance_id: amb.ambulance_id\n  });\n}\n\nreturn alerts.map(a => ({ json: a }));"
+      },
+      "id": "calculate-reroute",
+      "name": "Calculate Reroute",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/alerts",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey",        "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Prefer",        "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"{{ $json.message }}\",\n  \"type\": \"{{ $json.type }}\",\n  \"ambulance_id\": \"{{ $json.ambulance_id }}\"\n}"
+      },
+      "id": "insert-reroute-alert",
+      "name": "Insert Reroute Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"no_action\", \"reason\": \"signal_not_congested\" }"
+      },
+      "id": "no-action",
+      "name": "No Action Needed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"rerouted\" }"
+      },
+      "id": "respond-reroute",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    }
+  ],
+  "connections": {
+    "Signal Update Webhook":       { "main": [[{ "node": "Check Congestion / Blocked Signal", "type": "main", "index": 0 }]] },
+    "Check Congestion / Blocked Signal": {
+      "main": [
+        [{ "node": "Get Active Ambulances", "type": "main", "index": 0 }],
+        [{ "node": "No Action Needed",      "type": "main", "index": 0 }]
+      ]
+    },
+    "Get Active Ambulances": { "main": [[{ "node": "Calculate Reroute", "type": "main", "index": 0 }]] },
+    "Calculate Reroute":     { "main": [[{ "node": "Insert Reroute Alert", "type": "main", "index": 0 }]] },
+    "Insert Reroute Alert":  { "main": [[{ "node": "Respond",             "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["lifelane", "rerouting", "ai"]
+}

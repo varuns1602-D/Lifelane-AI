@@ -1,0 +1,102 @@
+{
+  "name": "SignalClearanceWorkflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "signal-clearance",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "signal-webhook",
+      "name": "Signal Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "lifelane-signal"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/signals?select=*&status=neq.green",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        }
+      },
+      "id": "fetch-signals",
+      "name": "Fetch Active Signals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const ambulanceLat = $('Signal Webhook').first().json.lat;\nconst ambulanceLng = $('Signal Webhook').first().json.lng;\nconst ambulanceId  = $('Signal Webhook').first().json.ambulance_id;\nconst signals = $('Fetch Active Signals').all().map(i => i.json);\n\nconst toClear = signals.filter(s => {\n  const dist = Math.sqrt(\n    Math.pow(s.location.lat - ambulanceLat, 2) +\n    Math.pow(s.location.lng - ambulanceLng, 2)\n  ) * 111000;\n  return dist <= 300;\n}).map(s => s.signal_id);\n\nreturn [{ json: { toClear, ambulanceId } }];"
+      },
+      "id": "calculate-signals",
+      "name": "Calculate Nearby Signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "split-signals",
+      "name": "Split Signal IDs",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/signals?signal_id=in.({{ $node['Calculate Nearby Signals'].json.toClear.join(',') }})",
+        "method": "PATCH",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "status", "value": "green" }
+          ]
+        }
+      },
+      "id": "clear-signals",
+      "name": "Clear Signals to Green",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"cleared\", \"signal_count\": {{ $node['Calculate Nearby Signals'].json.toClear.length }} }"
+      },
+      "id": "respond-signal",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Signal Webhook":            { "main": [[{ "node": "Fetch Active Signals",      "type": "main", "index": 0 }]] },
+    "Fetch Active Signals":      { "main": [[{ "node": "Calculate Nearby Signals",  "type": "main", "index": 0 }]] },
+    "Calculate Nearby Signals":  { "main": [[{ "node": "Clear Signals to Green",    "type": "main", "index": 0 }]] },
+    "Clear Signals to Green":    { "main": [[{ "node": "Respond",                   "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["lifelane", "signals"]
+}

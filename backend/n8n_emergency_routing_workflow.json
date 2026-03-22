@@ -1,0 +1,163 @@
+{
+  "name": "EmergencyRoutingWorkflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "emergency-trigger",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "lifelane-emergency"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.record.patient_known }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "patient-known-check",
+      "name": "Patient Known?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/hospitals?hospital_id=eq.{{ $node['Webhook Trigger'].json.record.preferred_hospital }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-preferred-hospital",
+      "name": "Fetch Preferred Hospital",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/hospitals?select=*&status=eq.operational&order=beds_available.desc",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-all-hospitals",
+      "name": "Fetch All Hospitals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/ambulances?ambulance_id=eq.{{ $node['Webhook Trigger'].json.record.ambulance_id }}&select=current_location",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fetch-ambulance-location",
+      "name": "Fetch Ambulance Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate nearest hospital using Haversine formula\nconst ambulance = $('Fetch Ambulance Location').first().json[0];\nconst hospitals = $('Fetch All Hospitals').first().json;\nconst ambLat = ambulance.current_location.lat;\nconst ambLng = ambulance.current_location.lng;\n\nconst distance = (lat1, lng1, lat2, lng2) => {\n  const R = 6371; // km\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLng = (lng2 - lng1) * Math.PI / 180;\n  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +\n    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *\n    Math.sin(dLng/2) * Math.sin(dLng/2);\n  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n};\n\nlet nearest = hospitals[0];\nlet minDist = Infinity;\nfor (const h of hospitals) {\n  const d = distance(ambLat, ambLng, h.location.lat, h.location.lng);\n  if (d < minDist) { minDist = d; nearest = h; }\n}\n\nreturn [{ json: { selected_hospital: nearest.hospital_id, hospital_name: nearest.hospital_name } }];"
+      },
+      "id": "calculate-nearest-hospital",
+      "name": "Calculate Nearest Hospital",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 520]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/emergencies?emergency_id=eq.{{ $node['Webhook Trigger'].json.record.emergency_id }}",
+        "method": "PATCH",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "selected_hospital", "value": "={{ $json.selected_hospital }}" },
+            { "name": "status", "value": "routing" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-emergency-record",
+      "name": "Update Emergency Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"routed\", \"selected_hospital\": \"{{ $node['Update Emergency Record'].json.selected_hospital }}\" }"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Patient Known?", "type": "main", "index": 0 }]] },
+    "Patient Known?": {
+      "main": [
+        [{ "node": "Fetch Preferred Hospital", "type": "main", "index": 0 }],
+        [{ "node": "Fetch All Hospitals", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch All Hospitals":     { "main": [[{ "node": "Fetch Ambulance Location", "type": "main", "index": 0 }]] },
+    "Fetch Ambulance Location": { "main": [[{ "node": "Calculate Nearest Hospital", "type": "main", "index": 0 }]] },
+    "Fetch Preferred Hospital": { "main": [[{ "node": "Update Emergency Record", "type": "main", "index": 0 }]] },
+    "Calculate Nearest Hospital": { "main": [[{ "node": "Update Emergency Record", "type": "main", "index": 0 }]] },
+    "Update Emergency Record":  { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" },
+  "tags": ["lifelane", "emergency"]
+}
